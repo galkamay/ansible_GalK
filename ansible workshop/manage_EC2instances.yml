@@ -1,0 +1,58 @@
+- name: Manage EC2 Instances
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Gather EC2 instance information
+      amazon.aws.ec2_instance_info:
+        region: us-east-1
+      register: ec2_info
+
+    - name: Install Docker if Managed is true
+      apt:
+        name: docker.io
+        state: present
+      become: yes
+      become_user: root
+      loop: "{{ ec2_info.instances }}"
+      when: 
+        - item.tags.Managed is defined
+        - item.tags.Managed == 'true'
+
+    - name: Ensure Docker is running
+      service:
+        name: docker
+        state: started
+        enabled: true
+      become: yes
+      become_user: root
+      loop: "{{ ec2_info.instances }}"
+      when: 
+        - item.tags.Managed is defined
+        - item.tags.Managed == 'true'
+
+    - name: Pull the Docker image specified in the DockerImage tag
+      docker_image:
+        name: "{{ item.tags.DockerImage }}"
+        source: pull
+      become: yes
+      become_user: root
+      loop: "{{ ec2_info.instances }}"
+      when: 
+        - item.tags.Managed is defined
+        - item.tags.Managed == 'true'
+        - item.tags.DockerImage is defined
+
+    - name: Run the service as a Docker container
+      docker_container:
+        name: "{{ item.tags.Service }}"
+        image: "{{ item.tags.DockerImage }}"
+        state: started
+        restart_policy: always
+      become: yes
+      become_user: root
+      loop: "{{ ec2_info.instances }}"
+      when: 
+        - item.tags.Managed is defined
+        - item.tags.Managed == 'true'
+        - item.tags.Service is defined
+        - item.tags.DockerImage is defined
